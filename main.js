@@ -8,7 +8,7 @@ import { Seaport } from "@opensea/seaport-js";
 // KONFIQURASIYA
 // ==========================================
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://azekamo50.onrender.com";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://azekamo60.onrender.com";
 const NFT_CONTRACT_ADDRESS = import.meta.env.VITE_NFT_CONTRACT || "0x54a88333F6e7540eA982261301309048aC431eD5";
 const SEAPORT_CONTRACT_ADDRESS = "0x0000000000000068F116a894984e2DB1123eB395";
 
@@ -16,16 +16,13 @@ const APECHAIN_ID = 33139;
 const APECHAIN_ID_HEX = "0x8173";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-// Qlobal Dəyişənlər
 let provider = null;
 let signer = null;
 let seaport = null;
 let userAddress = null;
 
-// Bulk (Toplu) Seçim üçün Set
 let selectedTokens = new Set();
 
-// HTML Elementləri
 const connectBtn = document.getElementById("connectBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const addrSpan = document.getElementById("addr");
@@ -47,22 +44,15 @@ function notify(msg, timeout = 3000) {
   if (timeout) setTimeout(() => { if (noticeDiv.textContent === msg) noticeDiv.textContent = ""; }, timeout);
 }
 
-// --- YENİLƏNMİŞ HİSSƏ: Şəkil Optimizasiyası ---
 function resolveIPFS(url) {
-  if (!url) return "https://https://i.postimg.cc/Hng3NRg7/Steptract-Logo.png";
-
-  // 1. IPFS Gateway çevrilməsi
+  if (!url) return "https://i.postimg.cc/Hng3NRg7/Steptract-Logo.png";
   const GATEWAY = "https://cloudflare-ipfs.com/ipfs/";
   let originalUrl = url;
-
   if (url.startsWith("ipfs://")) {
     originalUrl = url.replace("ipfs://", GATEWAY);
   } else if (url.startsWith("Qm") && url.length >= 46) {
     originalUrl = `${GATEWAY}${url}`;
   }
-
-  // 2. wsrv.nl istifadə edərək optimizasiya (500px, WebP, 75% keyfiyyət)
-  // Bu sizin istədiyiniz 50-100kb hədəfinə çatdıracaq.
   return `https://wsrv.nl/?url=${encodeURIComponent(originalUrl)}&w=500&q=75&output=webp&il`;
 }
 
@@ -176,7 +166,7 @@ let allNFTs = [];
 async function loadNFTs() {
   if (loadingNFTs) return;
   loadingNFTs = true;
-  marketplaceDiv.innerHTML = "<p style='color:white; width:100%; text-align:center;'>NFT-lər yüklənir...</p>";
+  marketplaceDiv.innerHTML = "<p style='color:black; width:100%; text-align:center;'>NFT-lər yüklənir...</p>";
   
   selectedTokens.clear();
   updateBulkUI();
@@ -188,7 +178,7 @@ async function loadNFTs() {
     marketplaceDiv.innerHTML = "";
 
     if (allNFTs.length === 0) {
-      marketplaceDiv.innerHTML = "<p style='color:white; width:100%; text-align:center;'>Hələ NFT yoxdur.</p>";
+      marketplaceDiv.innerHTML = "<p style='color:black; width:100%; text-align:center;'>Hələ NFT yoxdur.</p>";
       return;
     }
 
@@ -200,7 +190,6 @@ async function loadNFTs() {
     for (const nft of allNFTs) {
       const tokenid = nft.tokenid;
       const name = nft.name || `NFT #${tokenid}`;
-      // Yeni resolveIPFS funksiyası burada çağırılır
       const image = resolveIPFS(nft.image);
       
       let displayPrice = "";
@@ -209,7 +198,8 @@ async function loadNFTs() {
 
       if (nft.price && parseFloat(nft.price) > 0) {
         priceVal = parseFloat(nft.price);
-        displayPrice = `Qiymət: ${priceVal} APE`;
+        // "Qiymət" sözü silindi, sadəcə rəqəm və APE
+        displayPrice = `${priceVal} APE`;
         isListed = true;
       }
 
@@ -234,30 +224,38 @@ async function loadNFTs() {
       if (isListed) {
           if (canManage) {
               actionsHTML = `
-                <input type="number" placeholder="New Price" class="price-input" step="0.001">
-                <button class="wallet-btn update-btn" style="flex-grow:1;">Update</button>
+                <input type="number" placeholder="New Price" class="mini-input price-input" step="0.001">
+                <button class="action-btn btn-list update-btn">Update</button>
               `;
           } else {
-              actionsHTML = `<button class="wallet-btn buy-btn" style="width:100%">Buy</button>`;
+              actionsHTML = `<button class="action-btn btn-buy buy-btn">Buy</button>`;
           }
       } else {
           if (canManage) {
-              displayPrice = "Satışda deyil";
+              displayPrice = ""; 
               actionsHTML = `
-                 <input type="number" placeholder="Price" class="price-input" step="0.001">
-                 <button class="wallet-btn list-btn" style="flex-grow:1;">List</button>
+                 <input type="number" placeholder="Price" class="mini-input price-input" step="0.001">
+                 <button class="action-btn btn-list list-btn">List</button>
               `;
           }
       }
 
-      // YENİLƏNMİŞ HİSSƏ: loading="lazy" və decoding="async" əlavə edildi
+      // HTML Strukturunun CSS ilə tam uyğunlaşdırılması
       card.innerHTML = `
         ${checkboxHTML}
-        <img src="${image}" loading="lazy" decoding="async" onerror="this.src='https://i.postimg.cc/Hng3NRg7/Steptract-Logo.png'">
-        <h4>${name}</h4>
-        ${displayPrice ? `<p class="price">${displayPrice}</p>` : `<p style="min-height:22px;"></p>`}
-        <div class="nft-actions">
-            ${actionsHTML}
+        <div class="card-image-wrapper">
+            <img src="${image}" loading="lazy" decoding="async" onerror="this.src='https://i.postimg.cc/Hng3NRg7/Steptract-Logo.png'">
+        </div>
+        <div class="card-content">
+            <div class="card-title">${name}</div>
+            
+            <div class="card-details">
+                 ${displayPrice ? `<div class="price-val">${displayPrice}</div>` : `<div style="height:24px"></div>`}
+            </div>
+
+            <div class="card-actions">
+                ${actionsHTML}
+            </div>
         </div>
       `;
       marketplaceDiv.appendChild(card);
@@ -296,7 +294,7 @@ async function loadNFTs() {
     }
   } catch (err) {
     console.error(err);
-    marketplaceDiv.innerHTML = "<p style='color:red;'>Yüklənmə xətası.</p>";
+    marketplaceDiv.innerHTML = "<p style='color:red; text-align:center;'>Yüklənmə xətası.</p>";
   } finally {
     loadingNFTs = false;
   }
@@ -334,7 +332,7 @@ if(bulkListBtn) {
 }
 
 // ==========================================
-// YENİLƏNMİŞ TOPLU LISTƏLƏMƏ (1 İMZA İLƏ)
+// TOPLU LISTƏLƏMƏ
 // ==========================================
 
 async function bulkListNFTs(tokenIds, priceWei) {
@@ -342,7 +340,6 @@ async function bulkListNFTs(tokenIds, priceWei) {
     
     const seller = await signer.getAddress();
 
-    // 1. Approve Yoxlanışı
     try {
         const nftContract = new ethers.Contract(NFT_CONTRACT_ADDRESS, 
             ["function isApprovedForAll(address,address) view returns(bool)", "function setApprovalForAll(address,bool)"], signer);
@@ -462,7 +459,6 @@ async function buyNFT(nftRecord) {
         let gasLimit = ethers.BigNumber.from("500000");
         try {
             const est = await signer.estimateGas({ ...txRequest, value: finalValue, from: buyerAddress });
-            // YENİLƏNMİŞ HİSSƏ: Gas limiti 120-dən 150-yə qaldırıldı (Daha etibarlı əməliyyat üçün)
             gasLimit = est.mul(150).div(100); 
         } catch(e) {}
 

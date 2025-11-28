@@ -10,7 +10,6 @@ import { Seaport } from "@opensea/seaport-js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://azekamo60.onrender.com";
 const NFT_CONTRACT_ADDRESS = import.meta.env.VITE_NFT_CONTRACT || "0x54a88333F6e7540eA982261301309048aC431eD5";
-// Seaport 1.5 Canonical Address (ApeChain və digər EVM-lərdə standartdır)
 const SEAPORT_CONTRACT_ADDRESS = "0x0000000000000068F116a894984e2DB1123eB395";
 
 const APECHAIN_ID = 33139;
@@ -34,7 +33,7 @@ const marketplaceDiv = document.getElementById("marketplace");
 const noticeDiv = document.getElementById("notice");
 const bulkBar = document.getElementById("bulkBar");
 const bulkCount = document.getElementById("bulkCount");
-const bulkPriceInp = document.getElementById("bulkPrice");
+const bulkPriceInp = document.getElementById("bulkPrice"); // <-- Sizin istədiyiniz tək input
 const bulkListBtn = document.getElementById("bulkListBtn");
 
 // ==========================================
@@ -139,8 +138,6 @@ async function connectWallet() {
     disconnectBtn.style.display = "inline-block";
     addrSpan.textContent = `Wallet: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
     notify("Cüzdan qoşuldu!");
-    
-    // Account dəyişəndə səhifəni yenilə
     window.ethereum.on("accountsChanged", () => location.reload());
 
     await loadNFTs();
@@ -170,7 +167,6 @@ async function loadNFTs() {
   loadingNFTs = true;
   marketplaceDiv.innerHTML = "<p style='color:white; width:100%; text-align:center;'>NFT-lər yüklənir...</p>";
   
-  // Seçimləri sıfırla
   selectedTokens.clear();
   updateBulkUI();
 
@@ -210,7 +206,6 @@ async function loadNFTs() {
           try { realOwner = await nftContractRead.ownerOf(tokenid); } catch(e) {}
       }
 
-      // Sahiblik yoxlanışı
       const isMine = (userAddress && realOwner && userAddress.toLowerCase() === realOwner.toLowerCase());
       const isSeller = (userAddress && nft.seller_address && userAddress.toLowerCase() === nft.seller_address.toLowerCase());
       const canManage = isMine || isSeller;
@@ -218,7 +213,6 @@ async function loadNFTs() {
       const card = document.createElement("div");
       card.className = "nft-card";
       
-      // CHECKBOX LOGIKASI: Əgər idarə edə bilirəmsə, checkbox qoy
       let checkboxHTML = "";
       if (canManage) {
           checkboxHTML = `<input type="checkbox" class="select-box" data-id="${tokenid}">`;
@@ -237,6 +231,8 @@ async function loadNFTs() {
       } else {
           if (canManage) {
               displayPrice = "Satışda deyil";
+              // Fərdi inputları hələ də saxlayırıq, bəlkə tək satmaq istəyər,
+              // amma toplu satanda bunlara ehtiyac qalmır.
               actionsHTML = `
                  <input type="number" placeholder="Price" class="price-input" step="0.001">
                  <button class="wallet-btn list-btn" style="flex-grow:1;">List</button>
@@ -255,7 +251,6 @@ async function loadNFTs() {
       `;
       marketplaceDiv.appendChild(card);
 
-      // Checkbox Event Listener
       const chk = card.querySelector(".select-box");
       if (chk) {
           chk.onchange = (e) => {
@@ -265,7 +260,6 @@ async function loadNFTs() {
           };
       }
 
-      // Button Listeners
       if (actionsHTML !== "") {
           if (isListed) {
               if (canManage) {
@@ -273,7 +267,7 @@ async function loadNFTs() {
                  if(btn) btn.onclick = async () => {
                      const inp = card.querySelector(".price-input").value;
                      if(!inp) return notify("Yeni qiymət yazın");
-                     await listNFT(tokenid, ethers.utils.parseEther(inp), "Yeniləndi");
+                     await listNFT(tokenid, ethers.utils.parseEther(inp));
                  };
               } else {
                  const btn = card.querySelector(".buy-btn");
@@ -284,7 +278,7 @@ async function loadNFTs() {
               if(btn) btn.onclick = async () => {
                  const inp = card.querySelector(".price-input").value;
                  if(!inp) return notify("Qiymət yazın");
-                 await listNFT(tokenid, ethers.utils.parseEther(inp), "Satışa qoyuldu");
+                 await listNFT(tokenid, ethers.utils.parseEther(inp));
               };
           }
       }
@@ -316,14 +310,17 @@ window.cancelBulk = () => {
     updateBulkUI();
 };
 
+// --- BURADA SİZİN İSTƏDİYİNİZ MƏNTİQ ---
 if(bulkListBtn) {
     bulkListBtn.onclick = async () => {
+        // 1. Qiyməti aşağıdakı tək qutudan götürür
         const priceVal = bulkPriceInp.value;
         if (!priceVal || parseFloat(priceVal) <= 0) return alert("Toplu satış üçün düzgün qiymət yazın.");
         
         const priceWei = ethers.utils.parseEther(priceVal);
         const tokensArray = Array.from(selectedTokens);
         
+        // 2. Bu tək qiyməti bütün tokenlərə tətbiq edir
         await bulkListNFTs(tokensArray, priceWei);
     };
 }
@@ -337,7 +334,7 @@ async function bulkListNFTs(tokenIds, priceWei) {
     
     const seller = await signer.getAddress();
 
-    // 1. Ümumi İcazəni (Approve) yoxla
+    // 1. Approve Yoxlanışı
     try {
         const nftContract = new ethers.Contract(NFT_CONTRACT_ADDRESS, 
             ["function isApprovedForAll(address,address) view returns(bool)", "function setApprovalForAll(address,bool)"], signer);
@@ -350,43 +347,40 @@ async function bulkListNFTs(tokenIds, priceWei) {
         }
     } catch (e) { return alert("Approve xətası: " + e.message); }
 
-    notify(`${tokenIds.length} NFT üçün imza hazırlanır...`);
+    notify(`${tokenIds.length} NFT hazırlanır...`);
 
     try {
-        // 2. Order Inputs Hazırla (Array)
+        // 2. Orderləri hazırlayarkən hamısına EYNİ 'priceWei' veririk
         const orderInputs = tokenIds.map(tokenStr => {
             return {
                 offer: [{ 
-                    itemType: 2, // ERC721
+                    itemType: 2, 
                     token: NFT_CONTRACT_ADDRESS, 
                     identifier: tokenStr 
                 }],
                 consideration: [{ 
-                    itemType: 0, // APE Coin
+                    itemType: 0, 
                     token: ZERO_ADDRESS, 
                     identifier: "0", 
-                    amount: priceWei.toString(), 
+                    amount: priceWei.toString(), // <-- Baxın, hamısına eyni qiymət gedir
                     recipient: seller 
                 }],
-                // 30 Günlük vaxt
                 startTime: (Math.floor(Date.now()/1000)).toString(),
                 endTime: (Math.floor(Date.now()/1000) + 2592000).toString(), 
             };
         });
 
-        // 3. createBulkOrders ilə 1 dəfə imza at
         notify("Zəhmət olmasa cüzdanda 1 dəfə imzalayın...");
         
+        // 3. Tək imza (Bulk Order)
         const { executeAllActions } = await seaport.createBulkOrders(orderInputs, seller);
-        const signedOrders = await executeAllActions(); // <--- BURADA 1 DƏFƏ POPUP AÇILIR
+        const signedOrders = await executeAllActions(); 
 
-        notify("İmza alındı! Backendə göndərilir...");
+        notify("İmza alındı! Yadda saxlanılır...");
 
-        // 4. İmzalanmış orderləri backendə göndər
+        // 4. Backendə yazılma
         let successCount = 0;
-
         for (const order of signedOrders) {
-            // Seaport orderindən TokenID-ni tapırıq
             const offerItem = order.parameters.offer[0];
             const tokenStr = offerItem.identifierOrCriteria;
 
@@ -413,29 +407,21 @@ async function bulkListNFTs(tokenIds, priceWei) {
 
     } catch (err) {
         console.error("Bulk List Error:", err);
-        // User imzanı rədd edərsə və ya xəta olarsa
         alert("Toplu satış xətası: " + (err.message || err));
     }
 }
 
-// ==========================================
-// TƏK LISTƏLƏMƏ
-// ==========================================
-async function listNFT(tokenid, priceWei, successMsg) {
-  // Tək satış da artıq bulk funksiyasını istifadə edir (array kimi)
+// Tək Listələmə (Köhnə funksiya artıq bulk funksiyasını çağırır)
+async function listNFT(tokenid, priceWei) {
   await bulkListNFTs([tokenid.toString()], priceWei);
 }
 
-// ==========================================
-// BUY FUNCTION
-// ==========================================
+// Buy Funksiyası (Olduğu kimi)
 async function buyNFT(nftRecord) {
     if (!signer || !seaport) return alert("Cüzdan qoşulmayıb!");
     
     try {
         const buyerAddress = await signer.getAddress();
-        
-        // Öncə sahibliyi yoxla (Front-end check)
         const nftContract = new ethers.Contract(NFT_CONTRACT_ADDRESS, ["function ownerOf(uint256) view returns (address)"], provider);
         try {
             const owner = await nftContract.ownerOf(nftRecord.tokenid);
@@ -451,8 +437,6 @@ async function buyNFT(nftRecord) {
         if (!cleanOrd) return alert("Order xətası");
 
         const seller = cleanOrd.parameters.offerer;
-        
-        // Satıcının hələ də icazəsi varmı?
         const appContract = new ethers.Contract(NFT_CONTRACT_ADDRESS, ["function isApprovedForAll(address,address) view returns(bool)"], provider);
         const approved = await appContract.isApprovedForAll(seller, SEAPORT_CONTRACT_ADDRESS);
         if (!approved) return alert("Satıcı icazəni ləğv edib.");
@@ -461,12 +445,11 @@ async function buyNFT(nftRecord) {
         const { actions } = await seaport.fulfillOrder({ order: cleanOrd, accountAddress: buyerAddress });
         const txRequest = await actions[0].transactionMethods.buildTransaction();
 
-        // Dəyər (Value) Hesablanması
         let finalValue = ethers.BigNumber.from(0);
         if (txRequest.value) finalValue = ethers.BigNumber.from(txRequest.value);
         if (finalValue.eq(0) && cleanOrd.parameters.consideration) {
             cleanOrd.parameters.consideration.forEach(c => {
-                if (Number(c.itemType) === 0) { // Native coin
+                if (Number(c.itemType) === 0) { 
                     const amount = c.endAmount ? c.endAmount.toString() : "0";
                     finalValue = finalValue.add(ethers.BigNumber.from(amount));
                 }
@@ -491,7 +474,6 @@ async function buyNFT(nftRecord) {
         await tx.wait();
         notify("Uğurlu!");
 
-        // Satış bitdikdən sonra backend-ə bildir
         await fetch(`${BACKEND_URL}/api/buy`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -500,7 +482,6 @@ async function buyNFT(nftRecord) {
         setTimeout(() => location.reload(), 2000);
 
     } catch (err) {
-        console.error(err);
         alert("Buy xətası: " + err.message);
     }
 }

@@ -33,7 +33,7 @@ const marketplaceDiv = document.getElementById("marketplace");
 const noticeDiv = document.getElementById("notice");
 const bulkBar = document.getElementById("bulkBar");
 const bulkCount = document.getElementById("bulkCount");
-const bulkPriceInp = document.getElementById("bulkPrice"); // <-- Sizin istədiyiniz tək input
+const bulkPriceInp = document.getElementById("bulkPrice");
 const bulkListBtn = document.getElementById("bulkListBtn");
 
 // ==========================================
@@ -47,12 +47,23 @@ function notify(msg, timeout = 3000) {
   if (timeout) setTimeout(() => { if (noticeDiv.textContent === msg) noticeDiv.textContent = ""; }, timeout);
 }
 
+// --- YENİLƏNMİŞ HİSSƏ: Şəkil Optimizasiyası ---
 function resolveIPFS(url) {
-  if (!url) return "https://via.placeholder.com/300?text=No+Image";
+  if (!url) return "https://https://i.postimg.cc/Hng3NRg7/Steptract-Logo.png";
+
+  // 1. IPFS Gateway çevrilməsi
   const GATEWAY = "https://cloudflare-ipfs.com/ipfs/";
-  if (url.startsWith("ipfs://")) return url.replace("ipfs://", GATEWAY);
-  if (url.startsWith("Qm") && url.length >= 46) return `${GATEWAY}${url}`;
-  return url;
+  let originalUrl = url;
+
+  if (url.startsWith("ipfs://")) {
+    originalUrl = url.replace("ipfs://", GATEWAY);
+  } else if (url.startsWith("Qm") && url.length >= 46) {
+    originalUrl = `${GATEWAY}${url}`;
+  }
+
+  // 2. wsrv.nl istifadə edərək optimizasiya (500px, WebP, 75% keyfiyyət)
+  // Bu sizin istədiyiniz 50-100kb hədəfinə çatdıracaq.
+  return `https://wsrv.nl/?url=${encodeURIComponent(originalUrl)}&w=500&q=75&output=webp&il`;
 }
 
 function cleanOrder(orderData) {
@@ -189,6 +200,7 @@ async function loadNFTs() {
     for (const nft of allNFTs) {
       const tokenid = nft.tokenid;
       const name = nft.name || `NFT #${tokenid}`;
+      // Yeni resolveIPFS funksiyası burada çağırılır
       const image = resolveIPFS(nft.image);
       
       let displayPrice = "";
@@ -231,8 +243,6 @@ async function loadNFTs() {
       } else {
           if (canManage) {
               displayPrice = "Satışda deyil";
-              // Fərdi inputları hələ də saxlayırıq, bəlkə tək satmaq istəyər,
-              // amma toplu satanda bunlara ehtiyac qalmır.
               actionsHTML = `
                  <input type="number" placeholder="Price" class="price-input" step="0.001">
                  <button class="wallet-btn list-btn" style="flex-grow:1;">List</button>
@@ -240,9 +250,10 @@ async function loadNFTs() {
           }
       }
 
+      // YENİLƏNMİŞ HİSSƏ: loading="lazy" və decoding="async" əlavə edildi
       card.innerHTML = `
         ${checkboxHTML}
-        <img src="${image}" onerror="this.src='https://via.placeholder.com/300?text=Error'">
+        <img src="${image}" loading="lazy" decoding="async" onerror="this.src='https://i.postimg.cc/Hng3NRg7/Steptract-Logo.png'">
         <h4>${name}</h4>
         ${displayPrice ? `<p class="price">${displayPrice}</p>` : `<p style="min-height:22px;"></p>`}
         <div class="nft-actions">
@@ -310,17 +321,14 @@ window.cancelBulk = () => {
     updateBulkUI();
 };
 
-// --- BURADA SİZİN İSTƏDİYİNİZ MƏNTİQ ---
 if(bulkListBtn) {
     bulkListBtn.onclick = async () => {
-        // 1. Qiyməti aşağıdakı tək qutudan götürür
         const priceVal = bulkPriceInp.value;
         if (!priceVal || parseFloat(priceVal) <= 0) return alert("Toplu satış üçün düzgün qiymət yazın.");
         
         const priceWei = ethers.utils.parseEther(priceVal);
         const tokensArray = Array.from(selectedTokens);
         
-        // 2. Bu tək qiyməti bütün tokenlərə tətbiq edir
         await bulkListNFTs(tokensArray, priceWei);
     };
 }
@@ -350,7 +358,6 @@ async function bulkListNFTs(tokenIds, priceWei) {
     notify(`${tokenIds.length} NFT hazırlanır...`);
 
     try {
-        // 2. Orderləri hazırlayarkən hamısına EYNİ 'priceWei' veririk
         const orderInputs = tokenIds.map(tokenStr => {
             return {
                 offer: [{ 
@@ -362,7 +369,7 @@ async function bulkListNFTs(tokenIds, priceWei) {
                     itemType: 0, 
                     token: ZERO_ADDRESS, 
                     identifier: "0", 
-                    amount: priceWei.toString(), // <-- Baxın, hamısına eyni qiymət gedir
+                    amount: priceWei.toString(), 
                     recipient: seller 
                 }],
                 startTime: (Math.floor(Date.now()/1000)).toString(),
@@ -372,13 +379,11 @@ async function bulkListNFTs(tokenIds, priceWei) {
 
         notify("Zəhmət olmasa cüzdanda 1 dəfə imzalayın...");
         
-        // 3. Tək imza (Bulk Order)
         const { executeAllActions } = await seaport.createBulkOrders(orderInputs, seller);
         const signedOrders = await executeAllActions(); 
 
         notify("İmza alındı! Yadda saxlanılır...");
 
-        // 4. Backendə yazılma
         let successCount = 0;
         for (const order of signedOrders) {
             const offerItem = order.parameters.offer[0];
@@ -411,12 +416,10 @@ async function bulkListNFTs(tokenIds, priceWei) {
     }
 }
 
-// Tək Listələmə (Köhnə funksiya artıq bulk funksiyasını çağırır)
 async function listNFT(tokenid, priceWei) {
   await bulkListNFTs([tokenid.toString()], priceWei);
 }
 
-// Buy Funksiyası (Olduğu kimi)
 async function buyNFT(nftRecord) {
     if (!signer || !seaport) return alert("Cüzdan qoşulmayıb!");
     
@@ -459,7 +462,8 @@ async function buyNFT(nftRecord) {
         let gasLimit = ethers.BigNumber.from("500000");
         try {
             const est = await signer.estimateGas({ ...txRequest, value: finalValue, from: buyerAddress });
-            gasLimit = est.mul(120).div(100); 
+            // YENİLƏNMİŞ HİSSƏ: Gas limiti 120-dən 150-yə qaldırıldı (Daha etibarlı əməliyyat üçün)
+            gasLimit = est.mul(150).div(100); 
         } catch(e) {}
 
         notify("Təsdiqləyin...");

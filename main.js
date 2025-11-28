@@ -137,7 +137,7 @@ async function connectWallet() {
     addrSpan.textContent = `Wallet: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
     notify("Cüzdan qoşuldu!");
     
-    // Cüzdan dəyişəndə səhifəni yeniləyək ki, UI düzgün görünsün
+    // Cüzdan dəyişəndə səhifəni yeniləyək
     window.ethereum.on("accountsChanged", () => location.reload());
 
     await loadNFTs();
@@ -159,7 +159,7 @@ disconnectBtn.onclick = () => {
 connectBtn.onclick = connectWallet;
 
 // ==========================================
-// NFT YÜKLƏMƏ
+// NFT YÜKLƏMƏ (DƏYİŞDİRİLDİ)
 // ==========================================
 
 let loadingNFTs = false;
@@ -169,10 +169,9 @@ let allNFTs = [];
 async function loadNFTs() {
   if (loadingNFTs) return;
   loadingNFTs = true;
-  marketplaceDiv.innerHTML = ""; // Təmizləyirik ki, dublikat olmasın (cüzdan qoşulanda)
+  marketplaceDiv.innerHTML = ""; // Təmizləyirik ki, cüzdan qoşulanda dublikat olmasın
   
   try {
-    // API-dən bütün NFT-ləri çək
     const res = await fetch(`${BACKEND_URL}/api/nfts`);
     const data = await res.json();
     allNFTs = data.nfts || [];
@@ -182,7 +181,6 @@ async function loadNFTs() {
       return;
     }
 
-    // Hamısını render et (sadəlik üçün pagination-ı sildim, lazım olsa batch qaytara bilərsiz)
     for (const nft of allNFTs) {
       const tokenid = nft.tokenid;
       const name = nft.name || `NFT #${tokenid}`;
@@ -192,14 +190,14 @@ async function loadNFTs() {
       let priceVal = 0;
       let isListed = false;
 
-      // Qiymət varsa deməli satışdadır
+      // Qiymət varsa və 0-dan böyükdürsə, deməli satışdadır
       if (nft.price && parseFloat(nft.price) > 0) {
         priceVal = parseFloat(nft.price);
         displayPrice = priceVal + " APE";
         isListed = true;
       }
 
-      // Sahiblik yoxlanışı (Cüzdan qoşulubsa)
+      // Sahiblik yoxlanışı
       let isOwner = false;
       if (userAddress && nft.seller_address) {
           if (userAddress.toLowerCase() === nft.seller_address.toLowerCase()) {
@@ -210,23 +208,24 @@ async function loadNFTs() {
       const card = document.createElement("div");
       card.className = "nft-card";
       
-      // HTML QURULUŞU
-      let actionHTML = "";
+      // HTML GENERASİYASI
+      let actionsHTML = "";
 
       if (isListed) {
           if (isOwner) {
-              // Əgər satışdadırsa VƏ mənimsə -> UPDATE PRICE
-              actionHTML = `
+              // 1. Satışdadır VƏ Mənimdir -> Yeni Qiymət Qoy (Update)
+              // Burada placeholder "New Price" olacaq
+              actionsHTML = `
                 <input type="number" placeholder="New" class="price-input" step="0.001">
-                <button class="wallet-btn update-btn" style="flex-grow:1;">Yenilə</button>
+                <button class="wallet-btn update-btn" style="flex-grow:1;">Update</button>
               `;
           } else {
-              // Əgər satışdadırsa VƏ mənim deyilsə -> BUY
-              actionHTML = `<button class="wallet-btn buy-btn" style="width:100%">Buy</button>`;
+              // 2. Satışdadır AMMA Mənim deyil -> Al (Buy)
+              actionsHTML = `<button class="wallet-btn buy-btn" style="width:100%">Buy</button>`;
           }
       } else {
-          // Satışda deyil -> LIST
-          actionHTML = `
+          // 3. Satışda deyil -> Sat (List)
+          actionsHTML = `
              <input type="number" placeholder="Price" class="price-input" step="0.001">
              <button class="wallet-btn list-btn" style="flex-grow:1;">List</button>
           `;
@@ -237,28 +236,29 @@ async function loadNFTs() {
         <h4>${name}</h4>
         <p class="price">Qiymət: ${displayPrice}</p>
         <div class="nft-actions">
-            ${actionHTML}
+            ${actionsHTML}
         </div>
       `;
       marketplaceDiv.appendChild(card);
 
-      // BUTTON HADİSƏLƏRİ
+      // EVENT LISTENER-LƏR
       if (isListed) {
           if (isOwner) {
-             // Update Listener
+             // Update Button Basılanda
              const btn = card.querySelector(".update-btn");
              btn.onclick = async () => {
                  const inp = card.querySelector(".price-input").value;
                  if(!inp) return notify("Yeni qiymət daxil edin");
-                 await listNFT(tokenid, ethers.utils.parseEther(inp), "Yeniləndi");
+                 // listNFT funksiyasını çağırırıq (yenidən listələmək qiyməti dəyişmək deməkdir)
+                 await listNFT(tokenid, ethers.utils.parseEther(inp), "Qiymət yeniləndi");
              };
           } else {
-             // Buy Listener
+             // Buy Button Basılanda
              const btn = card.querySelector(".buy-btn");
              btn.onclick = async () => await buyNFT(nft);
           }
       } else {
-          // List Listener
+          // List Button Basılanda
           const btn = card.querySelector(".list-btn");
           btn.onclick = async () => {
              const inp = card.querySelector(".price-input").value;
@@ -284,8 +284,9 @@ async function buyNFT(nftRecord) {
   try {
     const buyerAddress = await signer.getAddress();
     
+    // Əlavə təhlükəsizlik: Öz malını almağa çalışma
     if (nftRecord.seller_address?.toLowerCase() === buyerAddress.toLowerCase()) {
-        return alert("Öz NFT-nizi ala bilməzsiniz. Qiyməti dəyişmək üçün 'Yenilə' istifadə edin.");
+        return alert("Öz NFT-nizi ala bilməzsiniz. Qiyməti dəyişmək üçün 'Update' düyməsini istifadə edin.");
     }
 
     notify("Order emal edilir...");
@@ -375,8 +376,6 @@ async function listNFT(tokenid, priceWei, successMsg) {
 
     notify("İmza tələb olunur...");
 
-    // Order yaradılır (Seaport off-chain signature)
-    // Qiymət yeniləmək əslində yeni order yaratmaqdır
     const orderInput = {
       offer: [{ itemType: 2, token: NFT_CONTRACT_ADDRESS, identifier: tokenStr }],
       consideration: [{ itemType: 0, token: ZERO_ADDRESS, identifier: "0", amount: priceWei.toString(), recipient: seller }],
@@ -390,7 +389,7 @@ async function listNFT(tokenid, priceWei, successMsg) {
     const plainOrder = orderToJsonSafe(signedOrder);
     const orderHash = seaport.getOrderHash(signedOrder.parameters);
 
-    // Backend-ə göndərilir (Köhnə orderin üstünə yazılmalıdır)
+    // Backend-ə göndəririk. Backend eyni tokenid üçün köhnə orderi silib yenisini yazmalıdır.
     await fetch(`${BACKEND_URL}/api/order`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

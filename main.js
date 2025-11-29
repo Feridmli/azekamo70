@@ -58,6 +58,7 @@ function resolveIPFS(url) {
   return `https://wsrv.nl/?url=${encodeURIComponent(originalUrl)}&w=500&q=75&output=webp&il`;
 }
 
+// Order təmizləmə
 function cleanOrder(orderData) {
   try {
     const order = orderData.order || orderData;
@@ -207,10 +208,14 @@ async function loadNFTs() {
     }
 
     for (const nft of allNFTs) {
+      // API-dən gələn ID-nin yoxlanması
       const tokenidRaw = (nft.tokenid !== undefined && nft.tokenid !== null) ? nft.tokenid : nft.tokenId;
       
-      if (!tokenidRaw) continue;
-      const tokenid = tokenidRaw.toString();
+      if (tokenidRaw === undefined || tokenidRaw === null) {
+          console.warn("NFT TokenID tapılmadı, atlanılır:", nft);
+          continue;
+      }
+      const tokenid = tokenidRaw.toString(); // Həmişə String!
 
       const name = nft.name || `NFT #${tokenid}`;
       const image = resolveIPFS(nft.image);
@@ -288,9 +293,7 @@ async function loadNFTs() {
           };
       }
 
-      // ------------------------------------------------------------------
-      // DÜZƏLİŞ: Action Düymələri artıq String (Mətn) Qiymət ötürür
-      // ------------------------------------------------------------------
+      // Action Handler
       if (actionsHTML !== "") {
           const priceInput = card.querySelector(".price-input");
           
@@ -300,7 +303,6 @@ async function loadNFTs() {
                  if(btn) btn.onclick = async () => {
                      const inp = priceInput.value;
                      if(!inp || isNaN(inp) || parseFloat(inp) <= 0) return notify("Düzgün qiymət yazın!");
-                     // BURADA DÜZƏLİŞ: ParseEther etmirik, sadəcə inp-i ötürürük
                      await listNFT(tokenid, inp);
                  };
               } else {
@@ -312,7 +314,6 @@ async function loadNFTs() {
               if(btn) btn.onclick = async () => {
                  const inp = priceInput.value;
                  if(!inp || isNaN(inp) || parseFloat(inp) <= 0) return notify("Düzgün qiymət yazın!");
-                 // BURADA DÜZƏLİŞ: ParseEther etmirik, sadəcə inp-i ötürürük
                  await listNFT(tokenid, inp);
               };
           }
@@ -351,41 +352,52 @@ if(bulkListBtn) {
         if (!priceVal || isNaN(priceVal) || parseFloat(priceVal) <= 0) return alert("Toplu satış üçün düzgün qiymət yazın.");
         
         const tokensArray = Array.from(selectedTokens);
-        // DÜZƏLİŞ: Birbaşa mətn qiyməti (məs: "0.5") ötürürük
         await bulkListNFTs(tokensArray, priceVal);
     };
 }
 
 // ==========================================
-// LIST FUNCTION (SAFE STRING VERSION)
+// LIST FUNCTION (SAFE & LOGGED)
 // ==========================================
 
-// Bu funksiya artıq 'priceInEth' dəyişənini MƏTN (String) kimi qəbul edir. 
-// Məsələn: "0.1" (APE). BigNumber obyektlərindən qaçırıq.
+async function listNFT(tokenid, priceInEth) {
+  // İlk qoruma: Əgər tokenid undefined-dirsə, burada dayansın
+  if (tokenid === undefined || tokenid === null) {
+      alert("XƏTA: Token ID təyin edilməyib (undefined). Səhifəni yeniləyin.");
+      return;
+  }
+  await bulkListNFTs([tokenid], priceInEth);
+}
+
 async function bulkListNFTs(tokenIds, priceInEth) {
+    console.log("BulkList Start:", { tokenIds, priceInEth });
+
     if (!signer || !seaport) return alert("Cüzdan qoşulmayıb!");
     
-    // Qiymət Mətn olmalıdır (Validasiya)
-    if (typeof priceInEth !== "string" && typeof priceInEth !== "number") {
-        return alert("Sistem Xətası: Qiymət düzgün formatda deyil.");
+    // 1. DATA VALIDATION (Xətaları tutmaq üçün)
+    if (priceInEth === undefined || priceInEth === null || priceInEth === "") {
+        return alert("Sistem Xətası: Qiymət dəyəri boşdur (undefined).");
     }
-    const priceStrInput = priceInEth.toString(); // "0.1"
 
-    let priceWeiBig;
     let priceWeiString;
-
-    // BigNumber hesablanması yalnız burda baş verir
     try {
-        priceWeiBig = ethers.utils.parseEther(priceStrInput);
-        priceWeiString = priceWeiBig.toString(); // "100000000000000000"
+        const safePrice = String(priceInEth).trim();
+        const priceBig = ethers.utils.parseEther(safePrice); // Əgər bura undefined gəlsə, catch-ə düşəcək
+        priceWeiString = priceBig.toString();
     } catch (e) {
-        return alert("Qiymət formatı yalnışdır (məs: 0.1)");
+        console.error("Price Conversion Error:", e);
+        return alert(`Qiymət çevrilmə xətası: ${e.message}`);
     }
+
+    // Token ID-ləri təmizləyirik (hamısı string olmalıdır)
+    const cleanTokenIds = tokenIds.map(t => {
+        if(t === undefined || t === null) throw new Error("TokenArray içində undefined var!");
+        return String(t);
+    });
 
     const seller = await signer.getAddress();
-    const cleanTokenIds = tokenIds.map(t => String(t));
 
-    // 1. APPROVAL
+    // 2. APPROVAL
     try {
         const nftContract = new ethers.Contract(NFT_CONTRACT_ADDRESS, 
             ["function isApprovedForAll(address,address) view returns(bool)", "function setApprovalForAll(address,bool)"], signer);
@@ -414,14 +426,16 @@ async function bulkListNFTs(tokenIds, priceInEth) {
                     itemType: 0, 
                     token: ZERO_ADDRESS, 
                     identifier: "0", 
-                    startAmount: priceWeiString, // String Wei
-                    endAmount: priceWeiString,   // String Wei
+                    startAmount: priceWeiString, // Hesabladığımız String Wei
+                    endAmount: priceWeiString,
                     recipient: seller 
                 }],
                 startTime: (Math.floor(Date.now()/1000)).toString(),
                 endTime: (Math.floor(Date.now()/1000) + 2592000).toString(),
             };
         });
+
+        console.log("Seaport Input:", orderInputs);
 
         notify("Zəhmət olmasa cüzdanda imzalayın...");
         
@@ -443,7 +457,7 @@ async function bulkListNFTs(tokenIds, priceInEth) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     tokenid: tokenStr,
-                    price: priceStrInput, // DB-ə birbaşa original inputu (0.1) yazırıq
+                    price: String(priceInEth), // Bazaya original inputu yazırıq
                     seller_address: seller,
                     seaport_order: plainOrder,
                     order_hash: orderHash,
@@ -457,19 +471,15 @@ async function bulkListNFTs(tokenIds, priceInEth) {
         setTimeout(() => location.reload(), 1500);
 
     } catch (err) {
-        console.error("Bulk List Error:", err);
-        // Detallı xəta mesajı
+        console.error("Bulk List Error Full:", err);
+        
         if (err.code === "INVALID_ARGUMENT") {
-             alert(`Daxili Xəta (Ethers): ${err.argument} dəyəri ${err.value} olaraq gəldi.`);
+             // Əgər Ethers xətasıdırsa, hansı dəyərin xarab olduğunu göstər
+             alert(`Daxili Xəta (Ethers): '${err.argument}' dəyəri '${err.value}' olaraq gəldi.`);
         } else {
              alert("Satış xətası: " + (err.message || err));
         }
     }
-}
-
-async function listNFT(tokenid, priceInEth) {
-  // Qiyməti MƏTN kimi ötürürük (məs: "0.1")
-  await bulkListNFTs([String(tokenid)], priceInEth);
 }
 
 // ==========================================

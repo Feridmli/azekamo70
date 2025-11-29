@@ -58,7 +58,7 @@ function resolveIPFS(url) {
   return `https://wsrv.nl/?url=${encodeURIComponent(originalUrl)}&w=500&q=75&output=webp&il`;
 }
 
-// Order təmizləmə
+// Order təmizləmə (Bazadan gələn order üçün)
 function cleanOrder(orderData) {
   try {
     const order = orderData.order || orderData;
@@ -351,16 +351,14 @@ if(bulkListBtn) {
     bulkListBtn.onclick = async () => {
         let priceVal = bulkPriceInp.value;
         if(priceVal) priceVal = priceVal.trim();
-
         if (!priceVal || isNaN(priceVal) || parseFloat(priceVal) <= 0) return alert("Toplu satış üçün düzgün qiymət yazın.");
-        
         const tokensArray = Array.from(selectedTokens);
         await bulkListNFTs(tokensArray, priceVal);
     };
 }
 
 // ==========================================
-// LIST FUNCTION (SAFE & LOGGED)
+// LIST FUNCTION (CRITICAL FIX)
 // ==========================================
 
 async function listNFT(tokenid, priceInEth) {
@@ -368,7 +366,6 @@ async function listNFT(tokenid, priceInEth) {
       alert("XƏTA: Token ID təyin edilməyib (undefined). Səhifəni yeniləyin.");
       return;
   }
-  // Tək NFT olsa belə array kimi göndəririk
   await bulkListNFTs([tokenid], priceInEth);
 }
 
@@ -395,7 +392,6 @@ async function bulkListNFTs(tokenIds, priceInEth) {
 
     if (!priceWeiString) return alert("Qiymət Wei formatına çevrilə bilmədi.");
 
-    // Token ID-ləri təmizləyirik (hamısı string olmalıdır)
     const cleanTokenIds = tokenIds.map(t => {
         if(t === undefined || t === null) throw new Error("TokenArray içində undefined var!");
         return String(t);
@@ -420,23 +416,25 @@ async function bulkListNFTs(tokenIds, priceInEth) {
     notify(`${cleanTokenIds.length} NFT orderi hazırlanır...`);
 
     try {
+        // --- ƏSAS DÜZƏLİŞ BURADADIR ---
+        // Seaport 'input' obyekti üçün startAmount/endAmount yox, 'amount' istəyir.
         const orderInputs = cleanTokenIds.map(tokenStr => {
             return {
+                // ConduitKey-i kitabxananın default-una buraxırıq (və ya explicitly sıfır verə bilərik)
                 conduitKey: ZERO_BYTES32,
                 offer: [{ 
                     itemType: 2, // ERC721
                     token: NFT_CONTRACT_ADDRESS, 
-                    identifier: tokenStr 
+                    identifier: tokenStr,
+                    amount: "1"  // MÜTLƏQ YAZILMALIDIR! (String)
                 }],
                 consideration: [{ 
                     itemType: 0, // NATIVE (APE)
                     token: ZERO_ADDRESS, 
                     identifier: "0", 
-                    startAmount: priceWeiString, 
-                    endAmount: priceWeiString,
+                    amount: priceWeiString, // BURADA startAmount yox, AMOUNT olmalıdır!
                     recipient: seller 
                 }],
-                // ƏN VACİB HİSSƏ: Zamanı String-ə çeviririk
                 startTime: Math.floor(Date.now()/1000).toString(),
                 endTime: (Math.floor(Date.now()/1000) + 2592000).toString(),
             };
@@ -446,6 +444,7 @@ async function bulkListNFTs(tokenIds, priceInEth) {
 
         notify("Zəhmət olmasa cüzdanda imzalayın...");
         
+        // createBulkOrders input-u qəbul edir və bizə signed order qaytarır
         const { executeAllActions } = await seaport.createBulkOrders(orderInputs, seller);
         const signedOrders = await executeAllActions(); 
 
@@ -453,6 +452,7 @@ async function bulkListNFTs(tokenIds, priceInEth) {
 
         let successCount = 0;
         for (const order of signedOrders) {
+            // Qeyd: Çıxış orderində artıq startAmount/endAmount olacaq
             const offerItem = order.parameters.offer[0];
             const tokenStr = offerItem.identifierOrCriteria;
 
@@ -482,7 +482,7 @@ async function bulkListNFTs(tokenIds, priceInEth) {
         
         if (err.code === "INVALID_ARGUMENT") {
              console.error("Invalid Argument Details:", err.argument, err.value);
-             alert(`Daxili Xəta (Ethers): '${err.argument}' arqumenti səhvdir. (Dəyər: ${err.value})`);
+             alert(`Daxili Xəta (Ethers): '${err.argument}' arqumenti səhvdir. (Dəyər: ${err.value}). Zəhmət olmasa konsolu yoxlayın.`);
         } else {
              alert("Satış xətası: " + (err.message || err));
         }
